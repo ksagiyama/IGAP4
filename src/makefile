@@ -13,5 +13,5 @@ OBJ           = $(patsubst %,$(ODIR)/%,$(_OBJ))
 main: ${OBJ}
 
 $(ODIR)/%.o: %.c
-	${COMPILER} ${FLAGS} -I${INC} -I${PETSC_DIR}/include -I${PETSC_DIR}/${PETSC_ARCH}/include -o $@ -c $<
+	${COMPILER} ${FLAGS} ${MFLAGS} -I${INC} -I${PETSC_DIR}/include -I${PETSC_DIR}/${PETSC_ARCH}/include -o $@ -c $<
 

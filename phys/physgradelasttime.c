@@ -17,8 +17,8 @@ Phys PhysGradElastTime()
     phys->ndensity=2;
     phys->nfield=6;
 
-    //                    r ,  curv,   e0 , e345 , le,   rho,  cii,        dt,    t
-    double par_mat[]={ 0.25,  0.50,  500.,  250.,  0.025, 1.0,  1.0,  1.e-3*(1./2.), 0.0 };
+    //                    r ,  curv,   e0 , e345 , le,   rho,  cii,    dt,    t
+    double par_mat[]={ 0.25,  0.50,  500.,  250.,  0.025, 1.0,  1.0,  1.e-3, 0.0 };
     phys->par_mat=(double*)malloc(9*sizeof(double));
     for (int i=0; i<9; i++) phys->par_mat[i]=par_mat[i];
     

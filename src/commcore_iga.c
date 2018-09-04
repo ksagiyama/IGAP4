@@ -10,6 +10,13 @@
 
 void mpicomm_iga(Core core)
 {
+    Comm comm = core->comm[0];
+    free(comm->selfIdx);
+    free(comm->sendIdx);
+    free(comm->sendPtr);
+    free(comm->recvIdx);
+    free(comm->recvPtr);
+
     // ----
     int porder     = core->mesh[0]->porder;
     int *nbasis    = core->mesh[0]->nbasis;
@@ -197,12 +204,12 @@ void mpicomm_iga(Core core)
     }
 
     // ----
-    core->comm[0]->nselfIdx = nselfIdx;
-    core->comm[0]->selfIdx  = selfIdx;
-    core->comm[0]->nsendIdx = nsendIdx;
-    core->comm[0]->sendIdx  = sendIdx;
-    core->comm[0]->sendPtr  = sendPtr;
-    core->comm[0]->nrecvIdx = nrecvIdx;
-    core->comm[0]->recvIdx  = recvIdx;
-    core->comm[0]->recvPtr  = recvPtr;
+    comm->nselfIdx = nselfIdx;
+    comm->selfIdx  = selfIdx;
+    comm->nsendIdx = nsendIdx;
+    comm->sendIdx  = sendIdx;
+    comm->sendPtr  = sendPtr;
+    comm->nrecvIdx = nrecvIdx;
+    comm->recvIdx  = recvIdx;
+    comm->recvPtr  = recvPtr;
 }

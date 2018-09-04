@@ -7,15 +7,20 @@
 #include "meshimpl.h"
 #include "bcimpl.h"
 #include "commimpl.h"
+#include "solnimpl.h"
 
 struct __Core{
 
-    Phys     *phys;
     Mesh     *mesh;
+    Phys     *phys;
     BC       *bc;
     Comm     *comm;
-    double   *U_hist;
-
+    Soln     *soln;
+    int      nmesh;
+    int      nphys;
+    int      nbc;
+    int      ncomm;
+    int      nsoln;
 };
 
 #endif

@@ -65,9 +65,9 @@ void igabeam(double Lx, double Ly, double Lz, int mref, int porder, int bc_perio
     for (int j=0; j<nbasis_global[1]; j++) {    
     for (int k=0; k<nbasis_global[2]; k++) {
         wVector_global[ia]=1.0;
-        XVector_global[ndim*ia+0]=((double)i-0.5)/((double)(nbasis_global[0]-2))*L[0];
-        XVector_global[ndim*ia+1]=((double)j-0.5)/((double)(nbasis_global[1]-2))*L[1];
-        XVector_global[ndim*ia+2]=((double)k-0.5)/((double)(nbasis_global[2]-2))*L[2];
+        XVector_global[ndim*ia+0]=( bc_periodic[0] ? ((double)i-0.5)/((double)(nbasis_global[0]-2)) : (double)i/((double)(nbasis_global[0]-1)) )*L[0];
+        XVector_global[ndim*ia+1]=( bc_periodic[1] ? ((double)j-0.5)/((double)(nbasis_global[1]-2)) : (double)j/((double)(nbasis_global[1]-1)) )*L[1];
+        XVector_global[ndim*ia+2]=( bc_periodic[2] ? ((double)k-0.5)/((double)(nbasis_global[2]-2)) : (double)k/((double)(nbasis_global[2]-1)) )*L[2];
         ia++;
     }}}
 }

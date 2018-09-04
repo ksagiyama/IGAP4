@@ -13,4 +13,6 @@
 // ---- Mesh : available mesh generation functions
 #include "meshigabeam.h"
 #include "meshigabeamtest.h"
+#include "meshigaannulus.h"
+#include "meshigaoshape.h"
 

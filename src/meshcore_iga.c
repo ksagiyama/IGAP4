@@ -14,9 +14,24 @@ void mpipart_iga(Mesh mesh)
     int nproc; assert(MPI_Comm_size(MPI_COMM_WORLD,&nproc)==MPI_SUCCESS);
     int rank;  assert(MPI_Comm_rank(MPI_COMM_WORLD,&rank) ==MPI_SUCCESS);
 
+    int ndim                   = 3;
+
+    free(mesh->nelem);
+    free(mesh->nbasis);
+    free(mesh->nknot);
+    for (int i=0; i<ndim; i++) free(mesh->knotVector[i]);
+    free(mesh->knotVector);
+    free(mesh->wVector);
+    free(mesh->XVector);
+    free(mesh->boun);
+    free(mesh->sendPart);
+    free(mesh->recvPart);
+    free(mesh->sendBlock);
+    free(mesh->recvBlock);
+    free(mesh->universalIdx_temp);
+
     //int ndim   = mesh->ndim;
     int ia;
-    int ndim                   = 3;
     int porder                 = mesh->porder;
     int *bc_periodic           = mesh->bc_periodic;
     int *nelem_global          = mesh->nelem_global;
@@ -35,12 +50,11 @@ void mpipart_iga(Mesh mesh)
     for (int i=nelem_global[1]/nepp_approx+1; i>0; i--)  { if (nproc/npart[0]%i ==0) { npart[1]=i; break;} }
     npart[2]=nproc/npart[0]/npart[1];
     if (rank==0) { printf("npart[]={%d,%d,%d}\n",npart[0],npart[1],npart[2]); }
-    if ( nelem_global[0]<npart[0]*porder || nelem_global[1]<npart[1]*porder || nelem_global[2]<npart[2]*porder)
+    if ( (npart[0]>1 && nelem_global[0]<npart[0]*porder) || (npart[1]>1 && nelem_global[1]<npart[1]*porder) || (npart[2]>1 && nelem_global[2]<npart[2]*porder) )
     {
         if (rank==0) { printf("\n\nAt least one of the partitions contains too few nodes (control points) in at least one spatial direction.\n\n"); }
         exit(EXIT_SUCCESS);
     }
-
     ipart[0]=rank/(npart[1]*npart[2]);
     ipart[1]=(rank%(npart[1]*npart[2]))/npart[2];
     ipart[2]=rank%npart[2];
@@ -227,12 +241,12 @@ void mpipart_iga(Mesh mesh)
     mesh->nboun        = nboun;
     mesh->boun         = boun;
 
-    free(mesh->bc_periodic);
-    free(mesh->nelem_global);
-    for (int idim=0; idim<ndim; idim++) { free(mesh->knotVector_global[idim]); }
-    free(mesh->knotVector_global);
-    free(mesh->wVector_global);
-    free(mesh->XVector_global);
+//    free(mesh->bc_periodic);
+//    free(mesh->nelem_global);
+//    for (int idim=0; idim<ndim; idim++) { free(mesh->knotVector_global[idim]); }
+//    free(mesh->knotVector_global);
+//    free(mesh->wVector_global);
+//    free(mesh->XVector_global);
 
     // F-periodic B.C.s: x=X+(F0.X+u)
     //double par_periodic[] ={0.0000*((double)app.bc_periodic[0]),0.0000*((double)app.bc_periodic[1]),0.0000*((double)app.bc_periodic[2]),
@@ -383,104 +397,160 @@ else
 
 } // evalN
 
-void nurbs_knotinsert(double *U_universal, const int nelem[], int nref, int porder, int ndim, int ndof, int bc_periodic[])
+
+void knotinsert(double *Ubar, double *Qw, double *U, double *Pw, double *X, int n, int r, int p)
+/*
+ * Piegl & Tiller, 2ed,
+ *     Sec.5.2: knot insertion.
+ *     Sec.5.3: knot refinement.
+ *   
+ * Notational change from the book:
+ *
+ * n -> n-1
+ * r -> r-1
+ *
+ * input : U    old knotVector
+ *         Pw   old control point vector (size n = # old basis)
+ *         X    vector of knots to be inserted (size r)
+ *         p    order of polynomial
+ *
+ * output: Ubar new knotVector           -> overwrites U
+ *         Qw   new control point vector -> overwrites Pw
+ *
+ */
 {
-    assert(porder==2); // currently only supports porder==2
-    double vx[4],vy[4],vz[4];
-    int nelem_old[ndim];
-    int nbasis_old[ndim];
-    int nbasis_new[ndim];
-    int nbasis[ndim];
-    double *Ui_new,*Ui_old;
+    assert(r>0);
+    assert(X[r-1]<U[n]+1.e-15);
+    int a=0; while (U[a+1]<X[0]+1.e-15)   a++; // a >= 0. can NOT just set to min. (with this algorithm)
+    int b=n; while (U[b-1]>X[r-1]+1.e-15) b--; // b <= n.
 
-    Ui_new=(double*) malloc((nelem[0]+porder)*(nelem[1]+porder)*(nelem[2]+porder)*sizeof(double));
-    Ui_old=(double*) malloc((nelem[0]+porder)*(nelem[1]+porder)*(nelem[2]+porder)*sizeof(double));
-    for (int idof=0; idof<ndof; idof++)
+    for (int j=0  ; j<=a-p ; j++) Qw[j]     = Pw[j];
+    for (int j=b-1; j<n    ; j++) Qw[j+r]   = Pw[j];
+    for (int j=0  ; j<=a   ; j++) Ubar[j]   = U[j];
+    for (int j=b+p; j<n+p+1; j++) Ubar[j+r] = U[j];
+    int i = b+p-1;
+    int k = b+p+r-1;
+    for (int j=r-1; j>=0; j--)
     {
-        for (int idim=0; idim<ndim; idim++) {
-            nelem_old[idim] =nelem[idim]/int_pow(2,nref);
-            nbasis_old[idim]=nelem_old[idim]+porder;
-            nbasis[idim]    =nelem_old[idim]+(bc_periodic[idim]==0)*porder;
-        }
-        for (int i=0; i<nbasis_old[0]; i++) { 
-        for (int j=0; j<nbasis_old[1]; j++) { 
-        for (int k=0; k<nbasis_old[2]; k++) { 
-            Ui_old[nbasis_old[1]*nbasis_old[2]*i+nbasis_old[2]*j+k]=U_universal[ndof*(nbasis[1]*nbasis[2]*(i%nbasis[0])+nbasis[2]*(j%nbasis[1])+(k%nbasis[2]))+idof];
-        }}}
-        for (int iref=0; iref<nref; iref++)
+        while (X[j] <= U[i] && i > a)
         {
-            for (int idim=0; idim<ndim; idim++) { nbasis_new[idim]=2*nelem_old[idim]+porder; }
-            for (int i=0; i<nbasis_new[0]*nbasis_new[1]*nbasis_new[2]; i++) { Ui_new[i]=0; }
-
-            for (int ix=0; ix<nbasis_old[0]; ix++) {
-            for (int iy=0; iy<nbasis_old[1]; iy++) {
-            for (int iz=0; iz<nbasis_old[2]; iz++) {
-                switch (bc_periodic[0]) {
-                case 0:
-                    if (ix==0)                    { vx[0]=0    ; vx[1]=0    ; vx[2]=1    ; vx[3]=1./2.; }
-                    else if (ix==1)               { vx[0]=0    ; vx[1]=1./2.; vx[2]=3./4.; vx[3]=1./4.; }
-                    else if (ix<nelem_old[0])     { vx[0]=1./4.; vx[1]=3./4.; vx[2]=3./4.; vx[3]=1./4.; }
-                    else if (ix==nelem_old[0])    { vx[0]=1./4.; vx[1]=3./4.; vx[2]=1./2.; vx[3]=0    ; }
-                    else if (ix==nelem_old[0]+1)  { vx[0]=1./2.; vx[1]=1    ; vx[2]=0    ; vx[3]=0    ; }
-                    break;
-                case 1:
-                    if (ix==0)                    { vx[0]=0    ; vx[1]=0    ; vx[2]=3./4.; vx[3]=1./4.; }
-                    else if (ix==1)               { vx[0]=1./4.; vx[1]=3./4.; vx[2]=3./4.; vx[3]=1./4.; }
-                    else if (ix<nelem_old[0])     { vx[0]=1./4.; vx[1]=3./4.; vx[2]=3./4.; vx[3]=1./4.; }
-                    else if (ix==nelem_old[0])    { vx[0]=1./4.; vx[1]=3./4.; vx[2]=3./4.; vx[3]=1./4.; }
-                    else if (ix==nelem_old[0]+1)  { vx[0]=1./4.; vx[1]=3./4 ; vx[2]=0    ; vx[3]=0    ; }
-                    break;
-                }
-                switch (bc_periodic[1]) {
-                case 0:
-                    if (iy==0)                    { vy[0]=0    ; vy[1]=0    ; vy[2]=1    ; vy[3]=1./2.; }
-                    else if (iy==1)               { vy[0]=0    ; vy[1]=1./2.; vy[2]=3./4.; vy[3]=1./4.; }
-                    else if (iy<nelem_old[1])     { vy[0]=1./4.; vy[1]=3./4.; vy[2]=3./4.; vy[3]=1./4.; }
-                    else if (iy==nelem_old[1])    { vy[0]=1./4.; vy[1]=3./4.; vy[2]=1./2.; vy[3]=0    ; }
-                    else if (iy==nelem_old[1]+1)  { vy[0]=1./2.; vy[1]=1    ; vy[2]=0    ; vy[3]=0    ; }
-                    break;
-                case 1:
-                    if (iy==0)                    { vy[0]=0    ; vy[1]=0    ; vy[2]=3./4.; vy[3]=1./4.; }
-                    else if (iy==1)               { vy[0]=1./4.; vy[1]=3./4.; vy[2]=3./4.; vy[3]=1./4.; }
-                    else if (iy<nelem_old[1])     { vy[0]=1./4.; vy[1]=3./4.; vy[2]=3./4.; vy[3]=1./4.; }
-                    else if (iy==nelem_old[1])    { vy[0]=1./4.; vy[1]=3./4.; vy[2]=3./4.; vy[3]=1./4.; }
-                    else if (iy==nelem_old[1]+1)  { vy[0]=1./4.; vy[1]=3./4.; vy[2]=0    ; vy[3]=0    ; }
-                    break;
-                }
-                switch (bc_periodic[2]) {
-                case 0:
-                    if (iz==0)                    { vz[0]=0    ; vz[1]=0    ; vz[2]=1    ; vz[3]=1./2.; }
-                    else if (iz==1)               { vz[0]=0    ; vz[1]=1./2.; vz[2]=3./4.; vz[3]=1./4.; }
-                    else if (iz<nelem_old[2])     { vz[0]=1./4.; vz[1]=3./4.; vz[2]=3./4.; vz[3]=1./4.; }
-                    else if (iz==nelem_old[2])    { vz[0]=1./4.; vz[1]=3./4.; vz[2]=1./2.; vz[3]=0    ; }
-                    else if (iz==nelem_old[2]+1)  { vz[0]=1./2.; vz[1]=1    ; vz[2]=0    ; vz[3]=0    ; }
-                    break;
-                case 1:
-                    if (iz==0)                    { vz[0]=0    ; vz[1]=0    ; vz[2]=3./4.; vz[3]=1./4.; }
-                    else if (iz==1)               { vz[0]=1./4.; vz[1]=3./4.; vz[2]=3./4.; vz[3]=1./4.; }
-                    else if (iz<nelem_old[2])     { vz[0]=1./4.; vz[1]=3./4.; vz[2]=3./4.; vz[3]=1./4.; }
-                    else if (iz==nelem_old[2])    { vz[0]=1./4.; vz[1]=3./4.; vz[2]=3./4.; vz[3]=1./4.; }
-                    else if (iz==nelem_old[2]+1)  { vz[0]=1./4.; vz[1]=3./4.; vz[2]=0    ; vz[3]=0    ; }
-                    break;
-                }
-                for (int jx=0; jx<4; jx++) {
-                for (int jy=0; jy<4; jy++) {
-                for (int jz=0; jz<4; jz++) {
-                if (vx[jx]*vy[jy]*vz[jz] != 0) 
-                { Ui_new[(nbasis_new[1]*nbasis_new[2])*(2*ix-2+jx)+nbasis_new[2]*(2*iy-2+jy)+(2*iz-2+jz)]+=Ui_old[(nbasis_old[1]*nbasis_old[2])*ix+nbasis_old[2]*iy+iz]*vx[jx]*vy[jy]*vz[jz]; }
-                }}}
-            }}}
-            for (int i=0; i<nbasis_new[0]*nbasis_new[1]*nbasis_new[2]; i++) { Ui_old[i]=Ui_new[i]; }
-            for (int idim=0; idim<ndim; idim++) { nelem_old[idim]*=2; }
-            for (int idim=0; idim<ndim; idim++) { nbasis_old[idim]=nelem_old[idim]+porder; }
+            Qw[k-p-1] = Pw[i-p-1];
+            Ubar[k]   = U[i];
+            k = k-1;
+            i = i-1;
         }
-        for (int idim=0; idim<ndim; idim++) { nbasis[idim]=nelem_old[idim]+(bc_periodic[idim]==0)*porder; }
-        for (int i=0; i<nbasis[0]; i++) { 
-        for (int j=0; j<nbasis[1]; j++) { 
-        for (int k=0; k<nbasis[2]; k++) { 
-            U_universal[ndof*(nbasis[1]*nbasis[2]*i+nbasis[2]*j+k)+idof]=Ui_old[nbasis_old[1]*nbasis_old[2]*i+nbasis_old[2]*j+k];
-        }}}
-    } // for ndof
-    free(Ui_new);
-    free(Ui_old);
+        Qw[k-p-1] = Qw[k-p];
+        for (int l=1; l<=p; l++)
+        {
+            int    ind  = k-p+l;
+            double alfa = Ubar[k+l]-X[j];
+            if ( fabs(alfa) < 1.e-15 )
+            {
+                Qw[ind-1] = Qw[ind];
+            }
+            else
+            {
+                alfa /= (Ubar[k+l]-U[i-p+l]);
+                Qw[ind-1] = alfa*Qw[ind-1] + (1.0-alfa)*Qw[ind];
+            }
+        }
+        Ubar[k]=X[j];
+        k = k-1;
+    }
 }
+
+void knotinsertmap(double *Ubar, double **T_, int **colIdx_, int **rowPtr_, double *U, double *X, int n, int r, int p)
+/*
+ * Piegl & Tiller, 2ed,
+ *     Sec.5.2: knot insertion.
+ *     Sec.5.3: knot refinement.
+ *   
+ * Notational change from the book:
+ *
+ * n -> n-1
+ * r -> r-1
+ *
+ * input : U    old knotVector
+ *         Pw   old control point vector (size n = # old basis)
+ *         X    vector of knots to be inserted (size r)
+ *         p    order of polynomial
+ *
+ * output: Ubar new knotVector           -> overwrites U
+ *         Qw   new control point vector -> overwrites Pw
+ *         T    transformation matrix: Qw = T*Pw
+ *
+ * Use dense matrix for now.
+ *
+ */
+{
+    double *T  ;
+    int *colIdx;
+    int *rowPtr;
+
+    double *Tdns = (double*)malloc(n*(n+r)*sizeof(double)); for (int i__=0; i__<n*(n+r); i__++) Tdns[i__]=0;
+
+    assert(r>0);
+    assert(X[r-1]<U[n]+1.e-15);
+    int a=0; while (U[a+1]<X[0]+1.e-15)   a++; // a >= 0. can NOT just set to min. (with this algorithm)
+    int b=n; while (U[b-1]>X[r-1]+1.e-15) b--; // b <= n.
+    for (int j=0  ; j<=a-p ; j++) Tdns[n*j+j]     =1.0;
+    for (int j=b-1; j<n    ; j++) Tdns[n*(j+r)+j] =1.0;
+    for (int j=0  ; j<=a   ; j++) Ubar[j]         = U[j];
+    for (int j=b+p; j<n+p+1; j++) Ubar[j+r]       = U[j];
+    int i = b+p-1;
+    int k = b+p+r-1;
+    for (int j=r-1; j>=0; j--)
+    {
+        while (X[j] <= U[i] && i > a)
+        {
+            Tdns[n*(k-p-1)+(i-p-1)] = 1.0;
+            Ubar[k]                 = U[i];
+            k-=1;
+            i-=1;
+        }
+        for (int i__=0; i__<n; i__++) Tdns[n*(k-p-1)+i__] = Tdns[n*(k-p)+i__];
+        for (int l=1; l<=p; l++)
+        {
+            int    ind  = k-p+l;
+            double alfa = Ubar[k+l]-X[j];
+            if ( fabs(alfa) < 1.e-15 )
+            {
+                for (int i__=0; i__<n; i__++) Tdns[n*(ind-1)+i__] = Tdns[n*ind+i__];
+            }
+            else
+            {
+                alfa /= (Ubar[k+l]-U[i-p+l]);
+                for (int i__=0; i__<n; i__++) Tdns[n*(ind-1)+i__] = alfa*Tdns[n*(ind-1)+i__] + (1.0-alfa)*Tdns[n*ind+i__];
+            }
+        }
+        Ubar[k]=X[j];
+        k-=1;
+    }
+    // create csr
+    int nnz=0;
+    for (int i__=0; i__<n*(n+r); i__++) if (Tdns[i__]!=0) nnz++;
+    T      = (double*)malloc(nnz*sizeof(double));
+    colIdx = (int*)malloc(nnz*sizeof(int));
+    rowPtr = (int*)malloc((n+r+1)*sizeof(int));
+    nnz=0;
+    for (int i__=0; i__<n+r; i__++)
+    {
+        rowPtr[i__]=nnz;
+        for (int j__=0; j__<n; j__++)
+        {
+            if (Tdns[n*i__+j__]!=0)
+            {
+                colIdx[nnz] = j__;
+                T[nnz]      = Tdns[n*i__+j__];
+                nnz++;
+            }
+        }
+    }
+    rowPtr[n+r]=nnz;
+    free(Tdns);
+    // 
+    *T_      = T;
+    *colIdx_ = colIdx;
+    *rowPtr_ = rowPtr;
+}
+

@@ -3,22 +3,23 @@
 
 #include "igap.h"
 
-#include "coreimpl.h"
-#include "assmimpl.h"
-#include "solvimpl.h"
-#include "iocommimpl.h"
-#include "postimpl.h"
-#include "plotimpl.h"
+#include "core.h"
+#include "assm.h"
+#include "solv.h"
+#include "post.h"
+#include "plot.h"
 
 struct __IGAP{
 
 Core core;
 Assm assm;
 Solv solv;
-IOcomm iocomm;
 Post post;
 Plot plot;
-
+int  nassm;
+int  nsolv;
+int  npost;
+int  nplot;
 };
 
 #endif

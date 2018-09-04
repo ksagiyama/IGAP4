@@ -40,7 +40,6 @@ PetscErrorCode Residual_iga(SNES snes, Vec U_, Vec RR, void *app_)
     int nrecvPart        = mesh->nrecvPart;
     int *recvPart        = mesh->recvPart;
 
-
     BC bc                = app->bc[0];
     int *bc_type         = bc->bc_type;
     double *par_periodic = bc->par_periodic;
@@ -58,13 +57,15 @@ PetscErrorCode Residual_iga(SNES snes, Vec U_, Vec RR, void *app_)
     int *recvIdx         = comm->recvIdx;
     int *recvPtr         = comm->recvPtr;
     int *globalIdx       = comm->globalIdx;
+
+    Soln soln            = app->soln[0];
     /* ================ assemble U ================ */
     MPI_Request request_send[nsendPart],request_recv[nrecvPart];
     MPI_Status status;
     double *sendbuff=(double*) malloc(nsendIdx*sizeof(double));
     double *recvbuff=(double*) malloc(nrecvIdx*sizeof(double));
     double *U = (double*) malloc((torder+1)*(nselfIdx+nrecvIdx)*sizeof(double));
-    double *U_hist = app->U_hist;
+    double *U_hist = soln->U_hist;
     const double *U_curr; VecGetArrayRead(U_,&U_curr); for (int i=0; i<nselfIdx; i++) { U_hist[i]=U_curr[i]; } VecRestoreArrayRead(U_,&U_curr);
     for (int ihist=0; ihist<torder+1; ihist++)
     {
@@ -107,24 +108,31 @@ PetscErrorCode Residual_iga(SNES snes, Vec U_, Vec RR, void *app_)
     int    idx[ndof*nbpe];
     double temp;
     int    ia;
-    int nbasis_y_active=nelem[1]+porder;
-    int nbasis_z_active=nelem[2]+porder;
+    int nbasis_y_active=nknot[1]-porder-1;
+    int nbasis_z_active=nknot[2]-porder-1;
     /* ================================================================   VOLUME INTEGRAL   ================================================================ */
     int    nquad=4;
     double cquad[nquad];
     double wquad[nquad];
     legendre_handle(cquad,wquad,nquad,0.,1.);
     // ---- loop over elements
-    for (int ielem_x=0; ielem_x<nelem[0]; ielem_x++) {
-    for (int ielem_y=0; ielem_y<nelem[1]; ielem_y++) {
-    for (int ielem_z=0; ielem_z<nelem[2]; ielem_z++) {
+    int ielem_x, ielem_y, ielem_z;
+    for (int iknot_x=porder; iknot_x<nknot[0]-porder-1; iknot_x++) {
+        X0[0]=knotVector[0][iknot_x]; X1[0]=knotVector[0][iknot_x+1];
+        if (X1[0]<X0[0]+1.e-12) continue;
+    for (int iknot_y=porder; iknot_y<nknot[1]-porder-1; iknot_y++) {
+        X0[1]=knotVector[1][iknot_y]; X1[1]=knotVector[1][iknot_y+1];
+        if (X1[1]<X0[1]+1.e-12) continue;
+    for (int iknot_z=porder; iknot_z<nknot[2]-porder-1; iknot_z++) {
+        X0[2]=knotVector[2][iknot_z]; X1[2]=knotVector[2][iknot_z+1];
+        if (X1[2]<X0[2]+1.e-12) continue;
+    ielem_x=iknot_x-porder;
+    ielem_y=iknot_y-porder;
+    ielem_z=iknot_z-porder;
+    kV[0]=knotVector[0]+iknot_x-porder;
+    kV[1]=knotVector[1]+iknot_y-porder;
+    kV[2]=knotVector[2]+iknot_z-porder;
     for (ia=0; ia<ndof*nbpe; ia++) { val[ia]=0.0; }
-    X0[0]=knotVector[0][ielem_x+porder]; X1[0]=knotVector[0][ielem_x+porder+1];
-    X0[1]=knotVector[1][ielem_y+porder]; X1[1]=knotVector[1][ielem_y+porder+1];
-    X0[2]=knotVector[2][ielem_z+porder]; X1[2]=knotVector[2][ielem_z+porder+1];
-    kV[0]=knotVector[0]+ielem_x;
-    kV[1]=knotVector[1]+ielem_y;
-    kV[2]=knotVector[2]+ielem_z;
     ia=0; 
     for (int i=0; i<porder+1; i++) {
     for (int j=0; j<porder+1; j++) {
@@ -520,7 +528,7 @@ PetscErrorCode Tangent_iga(SNES snes, Vec U_, Mat TT, Mat Pmat_, void *app_)
     int porder           = mesh->porder;
     int *nelem           = mesh->nelem;
     int *nbasis          = mesh->nbasis;
-    //int *nknot           = mesh->nknot;
+    int *nknot           = mesh->nknot;
     double **knotVector  = mesh->knotVector;
     double *wVector      = mesh->wVector;
     double *XVector      = mesh->XVector;
@@ -547,13 +555,15 @@ PetscErrorCode Tangent_iga(SNES snes, Vec U_, Mat TT, Mat Pmat_, void *app_)
     int *recvIdx         = comm->recvIdx;
     int *recvPtr         = comm->recvPtr;
     int *globalIdx       = comm->globalIdx;
+
+    Soln soln            = app->soln[0];
     /* ================ assemble U ================ */
     MPI_Request request_send[nsendPart],request_recv[nrecvPart];
     MPI_Status status;
     double *sendbuff=(double*) malloc(nsendIdx*sizeof(double));
     double *recvbuff=(double*) malloc(nrecvIdx*sizeof(double));
     double *U = (double*) malloc((torder+1)*(nselfIdx+nrecvIdx)*sizeof(double));
-    double *U_hist = app->U_hist;
+    double *U_hist = soln->U_hist;
     const double *U_curr; VecGetArrayRead(U_,&U_curr); for (int i=0; i<nselfIdx; i++) { U_hist[i]=U_curr[i]; } VecRestoreArrayRead(U_,&U_curr);
     for (int ihist=0; ihist<torder+1; ihist++)
     {
@@ -596,24 +606,32 @@ PetscErrorCode Tangent_iga(SNES snes, Vec U_, Mat TT, Mat Pmat_, void *app_)
     int         idx[ndof*nbpe];
     double      temp;
     int         ia,row,col;
-    int nbasis_y_active=nelem[1]+porder;
-    int nbasis_z_active=nelem[2]+porder;
+    int nbasis_y_active=nknot[1]-porder-1;
+    int nbasis_z_active=nknot[2]-porder-1;
     /* ================================================================   VOLUME INTEGRAL   ================================================================ */
     int    nquad=4;
     double cquad[nquad];
     double wquad[nquad];
     legendre_handle(cquad,wquad,nquad,0.,1.);
     // ---- loop over elements
-    for (int ielem_x=0; ielem_x<nelem[0]; ielem_x++) {
-    for (int ielem_y=0; ielem_y<nelem[1]; ielem_y++) {
-    for (int ielem_z=0; ielem_z<nelem[2]; ielem_z++) {
+    int ielem_x, ielem_y, ielem_z;
+    for (int iknot_x=porder; iknot_x<nknot[0]-porder-1; iknot_x++) {
+        X0[0]=knotVector[0][iknot_x]; X1[0]=knotVector[0][iknot_x+1];
+        if (X1[0]<X0[0]+1.e-12) continue;
+    for (int iknot_y=porder; iknot_y<nknot[1]-porder-1; iknot_y++) {
+        X0[1]=knotVector[1][iknot_y]; X1[1]=knotVector[1][iknot_y+1];
+        if (X1[1]<X0[1]+1.e-12) continue;
+    for (int iknot_z=porder; iknot_z<nknot[2]-porder-1; iknot_z++) {
+        X0[2]=knotVector[2][iknot_z]; X1[2]=knotVector[2][iknot_z+1];
+        if (X1[2]<X0[2]+1.e-12) continue;
+    ielem_x=iknot_x-porder;
+    ielem_y=iknot_y-porder;
+    ielem_z=iknot_z-porder;
+    kV[0]=knotVector[0]+iknot_x-porder;
+    kV[1]=knotVector[1]+iknot_y-porder;
+    kV[2]=knotVector[2]+iknot_z-porder;
+
     for (int i=0; i<int_pow(ndof*nbpe,2); i++) { val[i]=0.0; }
-    X0[0]=knotVector[0][ielem_x+porder]; X1[0]=knotVector[0][ielem_x+porder+1];
-    X0[1]=knotVector[1][ielem_y+porder]; X1[1]=knotVector[1][ielem_y+porder+1];
-    X0[2]=knotVector[2][ielem_z+porder]; X1[2]=knotVector[2][ielem_z+porder+1];
-    kV[0]=knotVector[0]+ielem_x;
-    kV[1]=knotVector[1]+ielem_y;
-    kV[2]=knotVector[2]+ielem_z;
     ia=0; 
     for (int i=0; i<porder+1; i++) {
     for (int j=0; j<porder+1; j++) {
@@ -1086,3 +1104,4 @@ void setnz_iga(int *d_nz, int *o_nz, Core core)
     }}}}
 }
 // if send to/recv from self: d_nz=d_nz+o_nz, o_nz=0.
+
